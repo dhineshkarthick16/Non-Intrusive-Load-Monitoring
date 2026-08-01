@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mini-NILM — Pin-by-Pin Circuit Schematic</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background:#0b0d12; color:#e8e8e8; margin:0; padding:24px; }
+  h1 { font-size:20px; color:#fff; margin-bottom:4px; }
+  h2 { font-size:15px; color:#e8e8e8; margin-top:28px; }
+  .sub { color:#9aa0a6; font-size:13px; margin-bottom:16px; }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; margin-bottom:16px; font-size:12px; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .swatch { width:14px; height:3px; display:inline-block; }
+  .note { background:#151822; border-left:3px solid #f5a623; padding:10px 14px; margin-top:14px; font-size:13px; border-radius:4px; }
+  .note b { color:#f5a623; }
+  .wrap { overflow-x:auto; background:#0b0d12; border-radius:8px; border:1px solid #23262f; }
+  svg { display:block; min-width:1200px; }
+  table { border-collapse: collapse; width:100%; margin-top:10px; font-size:13px; }
+  th, td { border:1px solid #2a2d35; padding:6px 10px; text-align:left; }
+  th { background:#1a1d24; color:#fff; }
+  td { color:#d1d5db; }
+  tr:nth-child(even) td { background:#111318; }
+</style>
+</head>
+<body>
+
+<h1>Mini-NILM — Pin-by-Pin Circuit Schematic</h1>
+<div class="sub">CT sensing → signal conditioning → zero-cross detection → ESP32 → LCD. Exact pin numbers, component values, and net routing.</div>
+
+<div class="legend">
+  <span><span class="swatch" style="background:#dc2626"></span> Mains L (hazard)</span>
+  <span><span class="swatch" style="background:#9ca3af"></span> Mains N / GND symbol</span>
+  <span><span class="swatch" style="background:#60a5fa"></span> Analog signal (CT chain)</span>
+  <span><span class="swatch" style="background:#34d399"></span> Op-amp output → ADC</span>
+  <span><span class="swatch" style="background:#93c5fd"></span> Zero-cross digital line</span>
+  <span><span class="swatch" style="background:#f59e0b"></span> 3V3 net</span>
+  <span><span class="swatch" style="background:#f472b6"></span> I2C SDA</span>
+  <span><span class="swatch" style="background:#fbbf24"></span> I2C SCL / opto LED</span>
+</div>
+
+<div class="wrap">
+<svg viewBox="0 0 1420 1080" xmlns="http://www.w3.org/2000/svg" font-family="Consolas, monospace">
+  <rect x="0" y="0" width="1420" height="1080" fill="#0b0d12"/>
+
+  <!-- ===================== MAINS BUS ===================== -->
+  <text x="700" y="40" text-anchor="middle" fill="#f87171" font-size="16" font-weight="bold">AC MAINS — wall socket / extension strip (HAZARD: live voltage)</text>
+
+  <line x1="60" y1="90" x2="1360" y2="90" stroke="#dc2626" stroke-width="3"/>
+  <text x="65" y="82" fill="#dc2626" font-size="14" font-weight="bold">L</text>
+
+  <line x1="60" y1="140" x2="1360" y2="140" stroke="#9ca3af" stroke-width="3"/>
+  <text x="65" y="160" fill="#9ca3af" font-size="14" font-weight="bold">N</text>
+
+  <!-- CT clamp on L line -->
+  <circle cx="250" cy="90" r="20" fill="none" stroke="#fca5a5" stroke-width="2" stroke-dasharray="4,3"/>
+  <line x1="240" y1="108" x2="240" y2="230" stroke="#fbbf24" stroke-width="2"/>
+  <line x1="262" y1="108" x2="262" y2="200" stroke="#fbbf24" stroke-width="2"/>
+  <text x="300" y="85" fill="#fca5a5" font-size="12">CT1: SCT-013-030</text>
+  <text x="300" y="102" fill="#fca5a5" font-size="11">(clamp-on, non-contact)</text>
+  <text x="230" y="245" fill="#fbbf24" font-size="11" text-anchor="middle">CT_A</text>
+  <text x="262" y="215" fill="#fbbf24" font-size="11" text-anchor="middle">CT_B</text>
+
+  <!-- Zero cross taps -->
+  <circle cx="750" cy="90" r="3.5" fill="#dc2626"/>
+  <line x1="750" y1="90" x2="750" y2="220" stroke="#f59e0b" stroke-width="2"/>
+  <circle cx="850" cy="140" r="3.5" fill="#9ca3af"/>
+  <line x1="850" y1="140" x2="850" y2="300" stroke="#9ca3af" stroke-width="2"/>
+  <text x="700" y="180" fill="#fbbf24" font-size="12">Zero-cross tap points (only true mains-contact node in this circuit)</text>
+
+  <!-- ===================== LEFT CHANNEL: CT SIGNAL CONDITIONING ===================== -->
+
+  <!-- CT_B straight to GND -->
+  <line x1="262" y1="200" x2="262" y2="340" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="262" y1="340" x2="262" y2="352" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="248" y1="352" x2="276" y2="352" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="253" y1="358" x2="271" y2="358" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="258" y1="364" x2="266" y2="364" stroke="#9ca3af" stroke-width="2"/>
+  <text x="262" y="380" fill="#9ca3af" font-size="10" text-anchor="middle">GND</text>
+
+  <!-- CT_A down to capacitor C1 -->
+  <line x1="240" y1="230" x2="240" y2="278" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="228" y1="285" x2="252" y2="285" stroke="#e5e7eb" stroke-width="3"/>
+  <line x1="228" y1="297" x2="252" y2="297" stroke="#e5e7eb" stroke-width="3"/>
+  <text x="272" y="295" fill="#e5e7eb" font-size="11">C1 10uF</text>
+  <line x1="240" y1="297" x2="240" y2="380" stroke="#60a5fa" stroke-width="2"/>
+
+  <!-- Bias divider R1/R2 branch at x=150 -->
+  <line x1="150" y1="270" x2="150" y2="290" stroke="#f59e0b" stroke-width="2"/>
+  <polygon points="140,262 160,262 150,250" fill="#f59e0b"/>
+  <text x="150" y="245" fill="#f59e0b" font-size="11" text-anchor="middle">3V3</text>
+  <polyline points="150,290 140,300 160,310 140,320 160,330 140,340 150,350" fill="none" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="115" y="320" fill="#e5e7eb" font-size="11" text-anchor="end">R1 10k</text>
+  <line x1="150" y1="350" x2="150" y2="380" stroke="#60a5fa" stroke-width="2"/>
+
+  <line x1="150" y1="380" x2="240" y2="380" stroke="#60a5fa" stroke-width="2"/>
+  <circle cx="150" cy="380" r="4" fill="#60a5fa"/>
+  <text x="155" y="400" fill="#93c5fd" font-size="11">NODE: BIAS (~1.65V)</text>
+
+  <line x1="150" y1="380" x2="150" y2="420" stroke="#60a5fa" stroke-width="2"/>
+  <polyline points="150,420 140,430 160,440 140,450 160,460 140,470 150,480" fill="none" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="115" y="450" fill="#e5e7eb" font-size="11" text-anchor="end">R2 10k</text>
+  <line x1="150" y1="480" x2="150" y2="500" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="150" y1="500" x2="150" y2="512" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="136" y1="512" x2="164" y2="512" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="141" y1="518" x2="159" y2="518" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="146" y1="524" x2="154" y2="524" stroke="#9ca3af" stroke-width="2"/>
+  <text x="150" y="540" fill="#9ca3af" font-size="10" text-anchor="middle">GND</text>
+
+  <!-- BIAS node to op-amp IN+ -->
+  <line x1="240" y1="380" x2="420" y2="380" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="420" y1="380" x2="420" y2="450" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="420" y1="450" x2="450" y2="450" stroke="#60a5fa" stroke-width="2"/>
+
+  <!-- ===================== OP-AMP LM358 ===================== -->
+  <polygon points="450,385 450,465 600,425" fill="#1f2937" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="490" y="415" fill="#e5e7eb" font-size="12" font-weight="bold">LM358</text>
+  <text x="480" y="435" fill="#9ca3af" font-size="10">unity gain</text>
+
+  <line x1="430" y1="400" x2="450" y2="400" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="425" y="395" fill="#fbbf24" font-size="11" text-anchor="end">Pin2 IN−</text>
+  <text x="456" y="405" fill="#e5e7eb" font-size="16" font-weight="bold">−</text>
+
+  <text x="456" y="452" fill="#e5e7eb" font-size="16" font-weight="bold">+</text>
+  <text x="425" y="460" fill="#fbbf24" font-size="11" text-anchor="end">Pin3 IN+</text>
+
+  <line x1="600" y1="425" x2="660" y2="425" stroke="#34d399" stroke-width="2"/>
+  <text x="605" y="415" fill="#fbbf24" font-size="11">Pin1 OUT</text>
+  <circle cx="660" cy="425" r="3.5" fill="#34d399"/>
+
+  <line x1="660" y1="425" x2="660" y2="400" stroke="#34d399" stroke-width="2"/>
+  <line x1="660" y1="400" x2="450" y2="400" stroke="#34d399" stroke-width="2"/>
+  <text x="640" y="392" fill="#34d399" font-size="10" text-anchor="end">feedback (unity gain)</text>
+
+  <line x1="500" y1="385" x2="500" y2="360" stroke="#f59e0b" stroke-width="2"/>
+  <polygon points="490,360 510,360 500,348" fill="#f59e0b"/>
+  <text x="500" y="343" fill="#f59e0b" font-size="10" text-anchor="middle">3V3</text>
+  <text x="505" y="378" fill="#fbbf24" font-size="10">Pin8 VCC</text>
+
+  <line x1="500" y1="465" x2="500" y2="490" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="486" y1="490" x2="514" y2="490" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="491" y1="496" x2="509" y2="496" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="496" y1="502" x2="504" y2="502" stroke="#9ca3af" stroke-width="2"/>
+  <text x="500" y="516" fill="#9ca3af" font-size="10" text-anchor="middle">GND</text>
+  <text x="505" y="483" fill="#fbbf24" font-size="10">Pin4 GND</text>
+
+  <!-- op-amp output routed down (x=660, clear of opto box which starts x=700) then right into ESP32 left edge -->
+  <line x1="660" y1="425" x2="660" y2="680" stroke="#34d399" stroke-width="2"/>
+  <line x1="660" y1="680" x2="950" y2="680" stroke="#34d399" stroke-width="2"/>
+  <text x="700" y="670" fill="#6ee7b7" font-size="10">to ESP32 GPIO34 (ADC1_CH6)</text>
+
+  <!-- ===================== RIGHT CHANNEL: ZERO-CROSS DETECTOR ===================== -->
+  <polyline points="750,220 740,235 760,250 740,265 760,280 740,295 750,300" fill="none" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="775" y="260" fill="#e5e7eb" font-size="11">Rzc 100k</text>
+
+  <line x1="750" y1="300" x2="820" y2="300" stroke="#f87171" stroke-width="2"/>
+  <polygon points="820,292 820,308 840,300" fill="#f87171"/>
+  <line x1="840" y1="292" x2="840" y2="308" stroke="#f87171" stroke-width="2"/>
+  <line x1="840" y1="300" x2="850" y2="300" stroke="#f87171" stroke-width="2"/>
+  <text x="785" y="288" fill="#f87171" font-size="10" text-anchor="middle">D1 1N4148</text>
+  <text x="785" y="322" fill="#f87171" font-size="9" text-anchor="middle">(reverse protect)</text>
+
+  <line x1="750" y1="300" x2="750" y2="340" stroke="#f59e0b" stroke-width="2"/>
+  <line x1="850" y1="300" x2="850" y2="340" stroke="#9ca3af" stroke-width="2"/>
+
+  <rect x="700" y="340" width="300" height="130" fill="#111827" stroke="#e5e7eb" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="850" y="360" fill="#e5e7eb" font-size="12" text-anchor="middle" font-weight="bold">U1: 4N25 OPTO-ISOLATOR</text>
+
+  <text x="742" y="378" fill="#fbbf24" font-size="10" text-anchor="middle">1</text>
+  <text x="858" y="378" fill="#fbbf24" font-size="10" text-anchor="middle">2</text>
+  <line x1="750" y1="365" x2="750" y2="420" stroke="#fbbf24" stroke-width="2"/>
+  <polygon points="740,390 740,410 762,400" fill="none" stroke="#fbbf24" stroke-width="2"/>
+  <line x1="762" y1="390" x2="762" y2="410" stroke="#fbbf24" stroke-width="2"/>
+  <line x1="762" y1="400" x2="850" y2="400" stroke="#fbbf24" stroke-width="2"/>
+  <line x1="850" y1="365" x2="850" y2="400" stroke="#fbbf24" stroke-width="2"/>
+  <text x="768" y="385" fill="#fde68a" font-size="9">light</text>
+  <line x1="800" y1="350" x2="800" y2="460" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="3,3"/>
+  <text x="800" y="345" fill="#6b7280" font-size="9" text-anchor="middle">isolation barrier</text>
+
+  <line x1="950" y1="360" x2="950" y2="450" stroke="#93c5fd" stroke-width="2"/>
+  <circle cx="950" cy="405" r="20" fill="none" stroke="#93c5fd" stroke-width="2"/>
+  <line x1="935" y1="393" x2="965" y2="417" stroke="#93c5fd" stroke-width="2"/>
+  <text x="925" y="378" fill="#fbbf24" font-size="10" text-anchor="middle">5</text>
+  <text x="925" y="440" fill="#fbbf24" font-size="10" text-anchor="middle">4</text>
+
+  <!-- Pin5 collector up to pullup -->
+  <line x1="950" y1="360" x2="950" y2="300" stroke="#60a5fa" stroke-width="2"/>
+  <circle cx="950" cy="300" r="4" fill="#60a5fa"/>
+  <polyline points="950,300 940,285 960,270 940,255 960,240 940,225 950,210" fill="none" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="970" y="255" fill="#e5e7eb" font-size="11">R3 10k (pull-up)</text>
+  <line x1="950" y1="210" x2="950" y2="185" stroke="#f59e0b" stroke-width="2"/>
+  <polygon points="940,185 960,185 950,173" fill="#f59e0b"/>
+  <text x="950" y="168" fill="#f59e0b" font-size="10" text-anchor="middle">3V3</text>
+
+  <!-- detour LEFT of opto box (clear of D1/box congestion), down past everything, then right into ESP32 left edge -->
+  <line x1="950" y1="300" x2="950" y2="310" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="950" y1="310" x2="680" y2="310" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="680" y1="310" x2="680" y2="720" stroke="#60a5fa" stroke-width="2"/>
+  <line x1="680" y1="720" x2="950" y2="720" stroke="#60a5fa" stroke-width="2"/>
+  <text x="700" y="560" fill="#93c5fd" font-size="10">to ESP32 GPIO27 (INT, zero-cross)</text>
+
+  <!-- Pin4 emitter to gnd -->
+  <line x1="950" y1="450" x2="950" y2="500" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="936" y1="500" x2="964" y2="500" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="941" y1="506" x2="959" y2="506" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="946" y1="512" x2="954" y2="512" stroke="#9ca3af" stroke-width="2"/>
+  <text x="950" y="528" fill="#9ca3af" font-size="10" text-anchor="middle">GND</text>
+
+  <!-- ===================== USB POWER ===================== -->
+  <rect x="1040" y="530" width="110" height="40" rx="4" fill="#1e2128" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="1095" y="554" fill="#a78bfa" font-size="11" text-anchor="middle">USB 5V IN</text>
+  <line x1="1095" y1="570" x2="1095" y2="600" stroke="#a78bfa" stroke-width="2"/>
+  <text x="1100" y="592" fill="#c4b5fd" font-size="10">VIN</text>
+
+  <!-- ===================== ESP32 BOARD ===================== -->
+  <rect x="950" y="600" width="220" height="220" rx="6" fill="#111827" stroke="#5eead4" stroke-width="2.5"/>
+  <text x="1060" y="628" fill="#5eead4" font-size="15" text-anchor="middle" font-weight="bold">ESP32 DevKit</text>
+
+  <!-- left edge pins -->
+  <line x1="950" y1="655" x2="900" y2="655" stroke="#f59e0b" stroke-width="2"/>
+  <text x="895" y="650" fill="#f59e0b" font-size="10" text-anchor="end">3V3 OUT</text>
+  <polygon points="880,655 900,655 890,643" fill="#f59e0b"/>
+  <text x="890" y="638" fill="#f59e0b" font-size="9" text-anchor="middle">(feeds all 3V3 flags)</text>
+
+  <line x1="950" y1="695" x2="900" y2="695" stroke="#9ca3af" stroke-width="2"/>
+  <text x="895" y="690" fill="#9ca3af" font-size="10" text-anchor="end">GND OUT</text>
+  <line x1="884" y1="695" x2="884" y2="705" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="872" y1="705" x2="896" y2="705" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="876" y1="711" x2="892" y2="711" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="880" y1="717" x2="888" y2="717" stroke="#9ca3af" stroke-width="2"/>
+  <text x="884" y="732" fill="#9ca3af" font-size="8" text-anchor="middle">(feeds all GND)</text>
+
+  <text x="960" y="675" fill="#6ee7b7" font-size="11">GPIO34</text>
+  <text x="960" y="715" fill="#93c5fd" font-size="11">GPIO27</text>
+
+  <!-- right edge pins -->
+  <line x1="1170" y1="740" x2="1240" y2="740" stroke="#f472b6" stroke-width="2"/>
+  <text x="1175" y="735" fill="#f9a8d4" font-size="11">GPIO21 (SDA)</text>
+
+  <line x1="1170" y1="780" x2="1240" y2="780" stroke="#fbbf24" stroke-width="2"/>
+  <text x="1175" y="775" fill="#fde68a" font-size="11">GPIO22 (SCL)</text>
+
+  <!-- ===================== LCD MODULE ===================== -->
+  <rect x="1240" y="700" width="150" height="150" rx="6" fill="#111827" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="1315" y="722" fill="#e5e7eb" font-size="12" text-anchor="middle" font-weight="bold">I2C LCD 16x2</text>
+  <text x="1315" y="738" fill="#9ca3af" font-size="10" text-anchor="middle">addr 0x27</text>
+
+  <!-- local VCC flag for LCD -->
+  <polygon points="1255,760 1275,760 1265,748" fill="#f59e0b"/>
+  <text x="1265" y="745" fill="#f59e0b" font-size="9" text-anchor="middle">3V3</text>
+  <line x1="1265" y1="760" x2="1265" y2="772" stroke="#f59e0b" stroke-width="2"/>
+  <text x="1280" y="775" fill="#f59e0b" font-size="10">VCC</text>
+
+  <!-- local GND for LCD -->
+  <line x1="1265" y1="790" x2="1265" y2="800" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="1251" y1="800" x2="1279" y2="800" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="1256" y1="806" x2="1274" y2="806" stroke="#9ca3af" stroke-width="2"/>
+  <line x1="1261" y1="812" x2="1269" y2="812" stroke="#9ca3af" stroke-width="2"/>
+  <text x="1280" y="794" fill="#9ca3af" font-size="10">GND</text>
+
+  <text x="1280" y="742" fill="#f9a8d4" font-size="10">SDA</text>
+  <text x="1280" y="782" fill="#fde68a" font-size="10">SCL</text>
+
+</svg>
+</div>
+
+<h2>ESP32 Pin Reference Table</h2>
+<table>
+<tr><th>ESP32 Pin</th><th>Connects To</th><th>Function</th></tr>
+<tr><td>VIN</td><td>USB 5V (laptop/adapter)</td><td>Board power in — onboard regulator derives 3V3</td></tr>
+<tr><td>3V3 (out)</td><td>R1, LM358 Pin8, R3, LCD VCC</td><td>Powers all low-voltage analog/digital stages</td></tr>
+<tr><td>GND</td><td>R2, LM358 Pin4, Opto Pin4, CT_B, LCD GND</td><td>Common ground return</td></tr>
+<tr><td>GPIO34 (input-only, ADC1_CH6)</td><td>LM358 Pin1 (OUT)</td><td>Reads conditioned CT current waveform</td></tr>
+<tr><td>GPIO27 (interrupt)</td><td>Opto Pin5 (Collector) / R3 junction</td><td>Zero-cross timing reference, FALLING edge trigger</td></tr>
+<tr><td>GPIO21 (SDA)</td><td>LCD SDA</td><td>I2C data to display</td></tr>
+<tr><td>GPIO22 (SCL)</td><td>LCD SCL</td><td>I2C clock to display</td></tr>
+</table>
+
+<h2>Component Values</h2>
+<table>
+<tr><th>Ref</th><th>Component</th><th>Value / Part</th><th>Role</th></tr>
+<tr><td>CT1</td><td>Current transformer</td><td>SCT-013-030 (voltage-output, clamp-on)</td><td>Non-contact current sensing at mains</td></tr>
+<tr><td>C1</td><td>Coupling capacitor</td><td>10µF</td><td>AC-couples CT signal onto DC bias point</td></tr>
+<tr><td>R1, R2</td><td>Bias divider resistors</td><td>10kΩ each</td><td>Sets 1.65V midpoint (half of 3.3V) for ADC-safe swing</td></tr>
+<tr><td>U_opamp</td><td>Op-amp</td><td>LM358 (1 of 2 sections used)</td><td>Unity-gain buffer, isolates ADC from bias network</td></tr>
+<tr><td>Rzc</td><td>Series resistor</td><td>100kΩ</td><td>Limits current into opto LED from mains tap</td></tr>
+<tr><td>D1</td><td>Protection diode</td><td>1N4148</td><td>Shunts reverse-polarity half-cycle away from opto LED</td></tr>
+<tr><td>U1</td><td>Opto-isolator</td><td>4N25</td><td>Galvanically isolates mains zero-cross signal from MCU</td></tr>
+<tr><td>R3</td><td>Pull-up resistor</td><td>10kΩ</td><td>Pulls GPIO27 high when opto transistor is off</td></tr>
+<tr><td>—</td><td>Display</td><td>I2C 16x2 LCD (addr 0x27)</td><td>Shows live classification result</td></tr>
+</table>
+
+<div class="note">
+  <b>Only mains-contact point:</b> the Rzc/D1/opto zero-cross tap is the single place this circuit touches live mains directly. The CT is clamp-on (no contact) and the opto provides galvanic isolation beyond that point — everything to the right of U1's dashed isolation barrier is safe low-voltage (3.3V) territory.
+</div>
+<div class="note">
+  <b>Assembly safety:</b> wire the mains-side connections (CT clamp position, Rzc tap points) with the extension strip unplugged. Double-check D1's orientation before power-up — reversed, it won't protect the opto LED on the negative half-cycle.
+</div>
+
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Mini-NILM — Live Circuit Simulation</title>
+<style>
+  body { font-family:'Segoe UI', Arial, sans-serif; background:#0b0d12; color:#e8e8e8; margin:0; padding:20px; }
+  h1 { font-size:19px; color:#fff; margin:0 0 4px; }
+  .sub { color:#9aa0a6; font-size:12px; margin-bottom:16px; }
+  .layout { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+  .controls { background:#151822; border:1px solid #23262f; border-radius:8px; padding:14px 16px; min-width:230px; }
+  .controls h3 { margin:0 0 10px; font-size:13px; color:#9aa0a6; text-transform:uppercase; letter-spacing:.05em; }
+  .ctrl-row { margin-bottom:14px; }
+  .ctrl-row label { display:block; font-size:12px; color:#c9cdd3; margin-bottom:5px; }
+  .ctrl-row input[type=range] { width:100%; }
+  .ctrl-row select { width:100%; background:#0b0d12; color:#e8e8e8; border:1px solid #2a2d35; border-radius:4px; padding:5px; font-size:12px; }
+  .val { color:#5eead4; font-weight:bold; }
+  .panels { flex:1; min-width:640px; }
+  .panel { background:#0e1016; border:1px solid #23262f; border-radius:6px; margin-bottom:8px; padding:8px 10px; }
+  .panel-label { font-size:11px; color:#9aa0a6; margin-bottom:2px; display:flex; justify-content:space-between; }
+  .panel-label b { color:#e8e8e8; }
+  canvas { display:block; width:100%; }
+  .row2 { display:flex; gap:8px; }
+  .row2 .panel { flex:1; }
+  .readout { font-family:Consolas, monospace; font-size:22px; color:#5eead4; }
+  .readout small { font-size:11px; color:#9aa0a6; display:block; font-family:'Segoe UI',Arial,sans-serif; }
+  .lcd { background:#c8f0d8; color:#0b3d1e; border:4px solid #333; border-radius:4px; padding:12px 14px; font-family:'Courier New', monospace; font-size:16px; letter-spacing:1px; box-shadow: inset 0 0 8px rgba(0,0,0,.3); }
+  .lcd div { line-height:1.5; }
+  .note { background:#151822; border-left:3px solid #f5a623; padding:8px 12px; margin-top:10px; font-size:11.5px; border-radius:4px; color:#c9cdd3; }
+  .note b { color:#f5a623; }
+  .legendline { display:flex; gap:14px; flex-wrap:wrap; font-size:10.5px; color:#9aa0a6; margin-top:2px;}
+  .legendline span{display:flex;align-items:center;gap:4px;}
+  .sw{width:12px;height:2px;display:inline-block;}
+  button { background:#1f2937; color:#e8e8e8; border:1px solid #374151; border-radius:4px; padding:6px 10px; font-size:12px; cursor:pointer; }
+  button:hover { background:#2a3441; }
+</style>
+</head>
+<body>
+
+<h1>Mini-NILM — Live Circuit Simulation</h1>
+<div class="sub">Interactive signal-chain simulation: CT → C1/R1R2 bias → LM358 buffer → ESP32 ADC, and mains → Rzc/D1/4N25 → ESP32 GPIO27. Not a SPICE solver — signals are modeled analytically from the component values in your schematic, updated live.</div>
+
+<div class="layout">
+
+  <div class="controls">
+    <h3>Load Simulation</h3>
+    <div class="ctrl-row">
+      <label>Load current amplitude: <span class="val" id="ampVal">5.0</span> A (peak)</label>
+      <input type="range" id="amp" min="0.5" max="15" step="0.1" value="5">
+    </div>
+    <div class="ctrl-row">
+      <label>Appliance load type</label>
+      <select id="type">
+        <option value="resistive">Resistive (heater / bulb)</option>
+        <option value="inductive">Inductive (motor / fan)</option>
+        <option value="nonlinear">Nonlinear (SMPS / charger)</option>
+      </select>
+    </div>
+    <div class="ctrl-row">
+      <button id="pauseBtn">Pause</button>
+    </div>
+    <div class="note">
+      <b>Fixed:</b> mains 50 Hz, CT1 = SCT-013-030 (1V/30A spec), bias = 1.65V, R1=R2=10kΩ, LM358 unity gain, ADC = 12-bit (0–4095) @ 3.3V ref.
+    </div>
+  </div>
+
+  <div class="panels">
+
+    <div class="panel">
+      <div class="panel-label"><span>Mains voltage phase ref (gray) + GPIO27 zero-cross (blue) — <b>opto 4N25 output</b></span></div>
+      <canvas id="c1" width="900" height="90"></canvas>
+      <div class="legendline">
+        <span><span class="sw" style="background:#9ca3af"></span>Mains V (reference only)</span>
+        <span><span class="sw" style="background:#93c5fd"></span>GPIO27 (idle HIGH via R3 pull-up, pulses LOW at zero-cross)</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label"><span>CT1 primary current (mains L, clamp-on) — shape set by appliance type</span></div>
+      <canvas id="c2" width="900" height="90"></canvas>
+      <div class="legendline">
+        <span><span class="sw" style="background:#fca5a5"></span>Load current</span>
+        <span><span class="sw" style="background:#6b7280"></span>Mains V (phase ref, dashed)</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label"><span>Bias node (after C1 coupling + R1/R2 divider) — centered at 1.65V</span></div>
+      <canvas id="c3" width="900" height="90"></canvas>
+      <div class="legendline"><span><span class="sw" style="background:#60a5fa"></span>V_bias</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label"><span>LM358 output → ESP32 GPIO34 (ADC1_CH6), unity-gain buffered</span></div>
+      <canvas id="c4" width="900" height="90"></canvas>
+      <div class="legendline"><span><span class="sw" style="background:#34d399"></span>V_out (dots = ADC sample points)</span></div>
+    </div>
+
+    <div class="row2">
+      <div class="panel">
+        <div class="panel-label">ESP32 GPIO34 raw ADC</div>
+        <div class="readout" id="adcRead">0000<small>raw counts (0–4095)</small></div>
+      </div>
+      <div class="panel">
+        <div class="panel-label">Computed RMS current</div>
+        <div class="readout" id="rmsRead">0.00 A<small>I_rms = I_peak / √2</small></div>
+      </div>
+      <div class="panel">
+        <div class="panel-label">I2C LCD (0x27) output</div>
+        <div class="lcd">
+          <div id="lcdLine1">I: 0.00 A     </div>
+          <div id="lcdLine2">Load: -------  </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>Note:</b> the LCD line here is derived directly from the slider (illustrative). On real hardware the ESP32 computes RMS from the ADC sample buffer and times appliance edges against the GPIO27 zero-cross reference — this sim doesn't run your nearest-neighbor classifier, it only visualizes the analog/isolation front-end from your schematic.
+    </div>
+
+  </div>
+</div>
+
+<script>
+const ampSlider = document.getElementById('amp');
+const ampVal = document.getElementById('ampVal');
+const typeSel = document.getElementById('type');
+const pauseBtn = document.getElementById('pauseBtn');
+
+let paused = false;
+pauseBtn.onclick = () => { paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; };
+ampSlider.oninput = () => { ampVal.textContent = parseFloat(ampSlider.value).toFixed(1); };
+
+const F = 50; // mains Hz
+const OMEGA = 2*Math.PI*F;
+const WINDOW_MS = 40; // scope window width (2 cycles)
+
+function Vmains(t){ return Math.sin(OMEGA*t); }
+
+function Iload(t, A, type){
+  const w = OMEGA*t;
+  if(type === 'resistive'){
+    return A*Math.sin(w);
+  } else if(type === 'inductive'){
+    const lag = 55*Math.PI/180;
+    return A*Math.sin(w - lag);
+  } else { // nonlinear (SMPS): peaky current near voltage peaks
+    const s = Math.sin(w);
+    const peaky = Math.sign(s) * Math.pow(Math.max(0, Math.abs(s) - 0.7)/0.3, 2);
+    return A*peaky;
+  }
+}
+
+function zeroCross(t){
+  // idle HIGH (3.3V), narrow LOW pulse just after the falling zero-crossing
+  const s = Math.sin(OMEGA*t);
+  return (s < 0 && s > -0.15) ? 0 : 3.3;
+}
+
+function drawPanel(canvas, fn, opts){
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0e1016';
+  ctx.fillRect(0,0,w,h);
+
+  // gridline
+  ctx.strokeStyle = '#1c1f27';
+  ctx.lineWidth = 1;
+  for(let gx=0; gx<w; gx+=w/8){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,h); ctx.stroke(); }
+
+  if(opts.midline){
+    ctx.strokeStyle = '#374151';
+    ctx.setLineDash([4,3]);
+    const my = h - ((opts.midline - opts.ymin)/(opts.ymax-opts.ymin))*h;
+    ctx.beginPath(); ctx.moveTo(0,my); ctx.lineTo(w,my); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  return ctx;
+}
+
+function plotLine(ctx, w, h, tNow, fn, ymin, ymax, color, lw){
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw || 2;
+  ctx.beginPath();
+  const N = 400;
+  for(let i=0;i<=N;i++){
+    const x = i/N*w;
+    const tt = tNow - WINDOW_MS/1000 + (i/N)*(WINDOW_MS/1000);
+    const v = fn(tt);
+    const y = h - ((v - ymin)/(ymax-ymin))*h;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+}
+
+const c1 = document.getElementById('c1'), c2 = document.getElementById('c2'),
+      c3 = document.getElementById('c3'), c4 = document.getElementById('c4');
+
+const adcReadEl = document.getElementById('adcRead');
+const rmsReadEl = document.getElementById('rmsRead');
+const lcdLine1 = document.getElementById('lcdLine1');
+const lcdLine2 = document.getElementById('lcdLine2');
+
+const typeLabels = { resistive:'Heater/Bulb', inductive:'Motor/Fan', nonlinear:'SMPS/Charger' };
+
+function frame(){
+  if(!paused){
+    const A = parseFloat(ampSlider.value);
+    const type = typeSel.value;
+    const tNow = performance.now()/1000;
+
+    // Panel 1: mains ref + zero cross
+    let ctx = drawPanel(c1, null, {ymin:-1,ymax:1,midline:null});
+    plotLine(ctx, c1.width, c1.height, tNow, Vmains, -1.1, 1.1, '#6b7280', 1.5);
+    plotLine(ctx, c1.width, c1.height, tNow, zeroCross, -0.3, 3.6, '#93c5fd', 2);
+
+    // Panel 2: CT primary current, with mains voltage phase reference overlaid
+    // (a phase-shifted sine alone is indistinguishable from any other sine in
+    // an arbitrary scrolling window without something fixed to compare against)
+    const yLo = -A*1.15-0.3, yHi = A*1.15+0.3;
+    ctx = drawPanel(c2, null, {ymin:yLo, ymax:yHi});
+    ctx.setLineDash([5,4]);
+    plotLine(ctx, c2.width, c2.height, tNow, (t)=>Vmains(t)*A*0.9, yLo, yHi, '#6b7280', 1.5);
+    ctx.setLineDash([]);
+    plotLine(ctx, c2.width, c2.height, tNow, (t)=>Iload(t,A,type), yLo, yHi, '#fca5a5', 2);
+
+    // Panel 3: bias node (CT sensitivity 1V/30A on the 1.65V bias)
+    const biasFn = (t) => 1.65 + (Iload(t,A,type)/30);
+    ctx = drawPanel(c3, null, {ymin:0, ymax:3.3, midline:1.65});
+    plotLine(ctx, c3.width, c3.height, tNow, biasFn, 0, 3.3, '#60a5fa', 2);
+
+    // Panel 4: LM358 output -> ADC, with sample dots
+    ctx = drawPanel(c4, null, {ymin:0, ymax:3.3, midline:1.65});
+    plotLine(ctx, c4.width, c4.height, tNow, biasFn, 0, 3.3, '#34d399', 2);
+    ctx.fillStyle = '#34d399';
+    const sampleDt = 0.002; // 2ms "sample period" for visual dots
+    for(let ts = tNow - WINDOW_MS/1000; ts <= tNow; ts += sampleDt){
+      const frac = (ts - (tNow - WINDOW_MS/1000)) / (WINDOW_MS/1000);
+      const x = frac*c4.width;
+      const v = biasFn(ts);
+      const y = c4.height - ((v-0)/3.3)*c4.height;
+      ctx.beginPath(); ctx.arc(x,y,2,0,7); ctx.fill();
+    }
+
+    // Readouts
+    const vNow = biasFn(tNow);
+    const adcCounts = Math.max(0, Math.min(4095, Math.round((vNow/3.3)*4095)));
+    adcReadEl.innerHTML = adcCounts.toString().padStart(4,'0') + '<small>raw counts (0-4095)</small>';
+    const rms = (A/Math.sqrt(2)).toFixed(2);
+    rmsReadEl.innerHTML = rms + ' A<small>I_rms = I_peak / \u221A2</small>';
+    lcdLine1.textContent = ('I: ' + rms + ' A').padEnd(16,' ');
+    lcdLine2.textContent = ('Load: ' + typeLabels[type]).padEnd(16,' ');
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>

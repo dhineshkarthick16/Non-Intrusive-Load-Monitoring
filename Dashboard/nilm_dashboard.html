@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NILM Classification Dashboard</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f4f0;
+    margin: 0;
+    padding: 40px 20px;
+    display: flex;
+    justify-content: center;
+  }
+  .card {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e5e3dc;
+    padding: 24px 28px;
+    width: 100%;
+    max-width: 480px;
+  }
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .label {
+    font-size: 13px;
+    color: #6b6a65;
+    margin: 0 0 2px;
+  }
+  .top-appliance {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0;
+    color: #111;
+  }
+  button {
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f0ed; }
+  .bar-row { margin-bottom: 12px; }
+  .bar-top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .bar-name { color: #6b6a65; }
+  .bar-pct { font-weight: 600; color: #111; }
+  .bar-track {
+    height: 8px;
+    border-radius: 4px;
+    background: #eeeeea;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="header">
+    <div>
+      <p class="label">Detected appliance</p>
+      <p class="top-appliance" id="topLabel">Bulb</p>
+    </div>
+    <button id="nextBtn">Next sample &#8635;</button>
+  </div>
+  <div id="bars"></div>
+</div>
+
+<script>
+// Fake samples - replace with real classifier output later,
+// e.g. by fetching JSON from the ESP32 over serial/WiFi.
+const samples = [
+  { top: "Bulb",    scores: { Bulb: 99.1, Charger: 0.6, Fan: 0.2, Iron: 0.1, Unknown: 0.0 } },
+  { top: "Fan",     scores: { Fan: 96.4, Bulb: 2.0, Charger: 1.0, Iron: 0.4, Unknown: 0.2 } },
+  { top: "Unknown", scores: { Unknown: 88.0, Bulb: 5.0, Charger: 4.0, Fan: 2.0, Iron: 1.0 } },
+  { top: "Charger", scores: { Charger: 97.8, Bulb: 1.0, Fan: 0.7, Iron: 0.3, Unknown: 0.2 } }
+];
+let idx = 0;
+
+const colorMap = {
+  Bulb: "#eda100",
+  Fan: "#1baf7a",
+  Charger: "#378add",
+  Iron: "#e24b4a",
+  Unknown: "#888780"
+};
+
+function render() {
+  const sample = samples[idx];
+  document.getElementById('topLabel').textContent = sample.top;
+
+  const entries = Object.entries(sample.scores).sort((a, b) => b[1] - a[1]);
+  const barsDiv = document.getElementById('bars');
+  barsDiv.innerHTML = '';
+
+  entries.forEach(([name, pct]) => {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar-top">
+        <span class="bar-name">${name}</span>
+        <span class="bar-pct">${pct.toFixed(1)}%</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width: ${pct}%; background: ${colorMap[name]};"></div>
+      </div>
+    `;
+    barsDiv.appendChild(row);
+  });
+}
+
+document.getElementById('nextBtn').addEventListener('click', () => {
+  idx = (idx + 1) % samples.length;
+  render();
+});
+
+render();
+</script>
+
+</body>
+</html>
