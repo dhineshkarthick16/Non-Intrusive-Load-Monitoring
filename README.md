@@ -17,17 +17,4 @@
 ### ⏳ Phase 2
 - Zero Cross Detection
 
-## Images
 
-(Add screenshots)
-
-## Demonstration
-
-(Add video link)
-
-## Repository Structure
-
-docs/
-hardware/
-firmware/
-videos/
