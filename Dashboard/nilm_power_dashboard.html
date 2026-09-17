@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>NILM Power Dashboard</title>
+<title>EdgeWatt Dashboard</title>
 <style>
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -18,29 +18,23 @@
     border: 1px solid #e5e3dc;
     padding: 24px 28px;
     width: 100%;
-    max-width: 560px;
+    max-width: 480px;
   }
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-  }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .label { font-size: 13px; color: #6b6a65; margin: 0 0 2px; }
-  .top-appliance { font-size: 22px; font-weight: 600; margin: 0; color: #111; }
+  .state-name { font-size: 24px; font-weight: 600; margin: 0; }
+  .state-name.on { color: #1BAF7A; }
+  .state-name.off { color: #6b6a65; }
+  .state-name.warn { color: #E24B4A; }
   button {
     font-size: 13px; padding: 8px 14px; border-radius: 6px;
     border: 1px solid #ccc; background: #fff; cursor: pointer;
   }
   button:hover { background: #f0f0ed; }
-
-  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-  .metric {
-    background: #f7f6f2; border-radius: 8px; padding: 12px 14px;
-  }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .metric { background: #f7f6f2; border-radius: 8px; padding: 14px; }
   .metric-label { font-size: 12px; color: #6b6a65; margin: 0 0 4px; }
-  .metric-value { font-size: 20px; font-weight: 600; margin: 0; color: #111; }
-
+  .metric-value { font-size: 22px; font-weight: 600; margin: 0; color: #111; }
   .anomaly-banner {
     display: none;
     background: #FDEAEA; border: 1px solid #E24B4A; color: #791F1F;
@@ -48,13 +42,7 @@
     margin-bottom: 16px;
   }
   .anomaly-banner.show { display: block; }
-
-  .bar-row { margin-bottom: 12px; }
-  .bar-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
-  .bar-name { color: #6b6a65; }
-  .bar-pct { font-weight: 600; color: #111; }
-  .bar-track { height: 8px; border-radius: 4px; background: #eeeeea; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+  .note { font-size: 11.5px; color: #9a9890; margin-top: 18px; text-align: center; }
 </style>
 </head>
 <body>
@@ -62,26 +50,26 @@
 <div class="card">
   <div class="header">
     <div>
-      <p class="label">Detected appliance</p>
-      <p class="top-appliance" id="topLabel">Small Bulb (12W)</p>
+      <p class="label">Detected state</p>
+      <p class="state-name off" id="stateLabel">No Load / &lt;1W</p>
     </div>
     <button id="nextBtn">Next sample &#8635;</button>
   </div>
 
-  <div class="anomaly-banner" id="anomalyBanner">Anomaly detected - reading outside normal range for this appliance</div>
+  <div class="anomaly-banner" id="anomalyBanner">Anomaly - reading is a poor match for any known state</div>
 
   <div class="metrics">
     <div class="metric">
       <p class="metric-label">Current power</p>
-      <p class="metric-value" id="wattsVal">11.8 W</p>
+      <p class="metric-value" id="wattsVal">0.0 W</p>
     </div>
     <div class="metric">
-      <p class="metric-label">Energy used (session)</p>
-      <p class="metric-value" id="energyVal">0.084 Wh</p>
+      <p class="metric-label">On-time (this state)</p>
+      <p class="metric-value" id="timeVal">00:00</p>
     </div>
     <div class="metric">
-      <p class="metric-label">On-time (session)</p>
-      <p class="metric-value" id="timeVal">00:42</p>
+      <p class="metric-label">Units consumed</p>
+      <p class="metric-value" id="unitsVal">0.000000</p>
     </div>
     <div class="metric">
       <p class="metric-label">Status</p>
@@ -89,71 +77,43 @@
     </div>
   </div>
 
-  <div id="bars"></div>
+  <p class="note">Calibrated from real measured data: No Load/0.5W merged (statistically indistinguishable). 9W and 12W bulbs classify reliably; No-Load vs 9W has a small overlap zone near 8.5-9 RMS counts.</p>
 </div>
 
 <script>
-// Fake samples - replace with real data pulled from the ESP32 (serial/WiFi) later.
+// Fake samples - replace with live data parsed from ESP32 Serial output
+// (state, watts, energy_wh, on_time_sec, anomaly).
 const samples = [
-  {
-    top: "Small Bulb (12W)", watts: 11.8, energyWh: 0.084, onTimeSec: 42, anomaly: false,
-    scores: { "Small Bulb (12W)": 91.2, "Charger": 5.1, "Big Bulb (60W)": 2.0, "Unknown": 1.7 }
-  },
-  {
-    top: "Big Bulb (60W)", watts: 58.4, energyWh: 1.22, onTimeSec: 75, anomaly: false,
-    scores: { "Big Bulb (60W)": 95.6, "Small Bulb (12W)": 2.4, "Charger": 1.3, "Unknown": 0.7 }
-  },
-  {
-    top: "Charger", watts: 9.6, energyWh: 0.31, onTimeSec: 190, anomaly: false,
-    scores: { "Charger": 88.9, "Small Bulb (12W)": 6.0, "Big Bulb (60W)": 2.5, "Unknown": 2.6 }
-  },
-  {
-    top: "Small Bulb (12W)", watts: 18.9, energyWh: 0.11, onTimeSec: 30, anomaly: true,
-    scores: { "Small Bulb (12W)": 61.0, "Charger": 20.0, "Big Bulb (60W)": 12.0, "Unknown": 7.0 }
-  },
-  {
-    top: "Unknown / Off", watts: 0, energyWh: 0, onTimeSec: 0, anomaly: false,
-    scores: { "Unknown": 82.0, "Small Bulb (12W)": 8.0, "Charger": 6.0, "Big Bulb (60W)": 4.0 }
-  }
+  { state: "No Load / <1W", watts: 0, units: 0, onTimeSec: 0, anomaly: false },
+  { state: "9W Bulb", watts: 7.4, units: 0.000082, onTimeSec: 25, anomaly: false },
+  { state: "9W Bulb", watts: 7.6, units: 0.000201, onTimeSec: 70, anomaly: false },
+  { state: "12W Bulb", watts: 13.4, units: 0.000149, onTimeSec: 40, anomaly: false },
+  { state: "12W Bulb", watts: 13.8, units: 0.000341, onTimeSec: 95, anomaly: false },
+  { state: "12W Bulb", watts: 9.1, units: 0.000410, onTimeSec: 120, anomaly: true },
+  { state: "Unrecognized", watts: 0, units: 0, onTimeSec: 0, anomaly: false }
 ];
 let idx = 0;
 
-const colorMap = { "Small Bulb (12W)": "#eda100", "Big Bulb (60W)": "#1baf7a", "Charger": "#378add", "Unknown": "#888780" };
-
 function formatTime(sec) {
-  const m = Math.floor(sec / 60);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
+  if (h > 0) return h + "h" + String(m).padStart(2, '0') + "m";
   return String(m).padStart(2, '0') + ":" + String(s).padStart(2, '0');
 }
 
 function render() {
-  const sample = samples[idx];
-  document.getElementById('topLabel').textContent = sample.top;
-  document.getElementById('wattsVal').textContent = sample.watts.toFixed(1) + " W";
-  document.getElementById('energyVal').textContent = sample.energyWh.toFixed(3) + " Wh";
-  document.getElementById('timeVal').textContent = formatTime(sample.onTimeSec);
-  document.getElementById('statusVal').textContent = sample.anomaly ? "Anomaly" : "Normal";
+  const s = samples[idx];
+  const stateEl = document.getElementById('stateLabel');
+  stateEl.textContent = s.state;
+  stateEl.className = "state-name " + (s.anomaly ? "warn" : (s.state.includes("Bulb") ? "on" : "off"));
 
-  const banner = document.getElementById('anomalyBanner');
-  banner.classList.toggle('show', sample.anomaly);
+  document.getElementById('wattsVal').textContent = s.watts.toFixed(1) + " W";
+  document.getElementById('timeVal').textContent = formatTime(s.onTimeSec);
+  document.getElementById('unitsVal').textContent = s.units.toFixed(6);
+  document.getElementById('statusVal').textContent = s.anomaly ? "Anomaly" : "Normal";
 
-  const entries = Object.entries(sample.scores).sort((a, b) => b[1] - a[1]);
-  const barsDiv = document.getElementById('bars');
-  barsDiv.innerHTML = '';
-  entries.forEach(([name, pct]) => {
-    const row = document.createElement('div');
-    row.className = 'bar-row';
-    row.innerHTML = `
-      <div class="bar-top">
-        <span class="bar-name">${name}</span>
-        <span class="bar-pct">${pct.toFixed(1)}%</span>
-      </div>
-      <div class="bar-track">
-        <div class="bar-fill" style="width: ${pct}%; background: ${colorMap[name] || '#888780'};"></div>
-      </div>
-    `;
-    barsDiv.appendChild(row);
-  });
+  document.getElementById('anomalyBanner').classList.toggle('show', s.anomaly);
 }
 
 document.getElementById('nextBtn').addEventListener('click', () => {
