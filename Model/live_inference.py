@@ -17,8 +17,9 @@ import time
 import joblib
 import numpy as np
 
-# Ensure feature extractor is available for unpickling
+# Ensure feature extractor and multi-expert classifier are available for unpickling
 from feature_extractor import NILMFeatureExtractor, FEATURE_NAMES
+from regime_classifier import RegimeAwareNILMClassifier
 
 
 class NILMStateFilter:
@@ -35,7 +36,7 @@ class NILMStateFilter:
         transition_threshold: float = 0.70,
         disconnect_drop_threshold: float = -1.50,
         hysteresis_noise_floor: float = 11.20,
-        baseline_init: float = 8.50,
+        baseline_init: float = 6.60,
     ):
         self.window_size = window_size
         self.transition_threshold = transition_threshold
@@ -75,23 +76,33 @@ class NILMStateFilter:
 
         event = "STEADY"
 
+        active_noise_floor = getattr(self, "baseline_v1", 6.60) + 0.85
+
         # -------------------------------------------------------------
         # 1. Step-Drop Load Disconnection Detection
         # -------------------------------------------------------------
         # A sharp negative drop in RMS when in an active load state signifies
         # an explicit load turn-off / unplug event.
         if self.prev_v1 is not None and dv1 < self.disconnect_drop_threshold:
-            if self.confirmed_state in ["Bulb", "Charger"]:
-                event = f"DISCONNECT_DROP (dV={dv1:+.2f})"
-                self.confirmed_state = "NO LOAD"
-                self.history.clear()
-                for _ in range(self.window_size):
-                    self.history.append("NO LOAD")
-                # Engage debounce counter to absorb post-disconnect decay tail
-                self.debounce_counter = self.window_size + 4
-                self.prev_v1 = v1
-                self.prev_time = current_time
-                return self.confirmed_state, 1.0, dv1, dv1_dt, event
+            if self.confirmed_state in ["Bulb", "Charger", "Both"]:
+                if v1 < active_noise_floor:
+                    # Full disconnect: voltage collapsed back to baseline / noise floor
+                    event = f"DISCONNECT_DROP (dV={dv1:+.2f})"
+                    self.confirmed_state = "NO LOAD"
+                    self.history.clear()
+                    for _ in range(self.window_size):
+                        self.history.append("NO LOAD")
+                    # Engage debounce counter to absorb post-disconnect decay tail
+                    self.debounce_counter = self.window_size + 4
+                    self.prev_v1 = v1
+                    self.prev_time = current_time
+                    return self.confirmed_state, 1.0, dv1, dv1_dt, event
+                else:
+                    # Partial disconnect: dropped from 'Both' to a single load (Bulb or Charger)
+                    event = f"PARTIAL_DROP (dV={dv1:+.2f} -> {raw_pred})"
+                    self.history.clear()
+                    for _ in range(self.window_size // 2):
+                        self.history.append(raw_pred)
 
         # -------------------------------------------------------------
         # 2. Post-Load Hysteresis & Residual Drift Suppression
@@ -101,21 +112,21 @@ class NILMStateFilter:
         if self.debounce_counter > 0:
             self.debounce_counter -= 1
             # If still below active threshold, suppress false load trigger
-            if v1 < self.hysteresis_noise_floor:
+            if v1 < active_noise_floor:
                 effective_pred = "NO LOAD"
                 event = f"HYSTERESIS_HOLD (V1={v1:.2f})"
-            elif v1 >= 13.0:
+            elif v1 >= getattr(self, "baseline_v1", 6.60) + 3.0:
                 # Strong re-energization (e.g. bulb switched right back on)
                 self.debounce_counter = 0
 
         # -------------------------------------------------------------
-        # 3. Dynamic Baseline Tracking & Noise Floor Floor
+        # 3. Dynamic Baseline Tracking & Noise Floor
         # -------------------------------------------------------------
-        if v1 < 9.50:
-            # Voltage is strictly within the physical NO LOAD range
+        base_v = getattr(self, "baseline_v1", 6.60)
+        if v1 < base_v + 0.40:
+            # Voltage is strictly within the physical NO LOAD floor
             effective_pred = "NO LOAD"
-            # Exponential moving average for baseline calibration
-            self.baseline_v1 = 0.95 * self.baseline_v1 + 0.05 * v1
+        # Otherwise: effective_pred is 100% purely what the multi-expert model predicted (raw_pred)
 
         # -------------------------------------------------------------
         # 4. Temporal Moving Window & Majority Voting
@@ -162,6 +173,8 @@ def run_simulation_tests(model_path: str, window_size: int = 8, threshold: float
 
     try:
         model = load_classifier(model_path)
+        if hasattr(model, "set_baseline"):
+            model.set_baseline(9.50)
         print(f"[+] Loaded classifier pipeline from '{model_path}' successfully.")
     except Exception as e:
         print(f"[!] Error loading model: {e}")
@@ -261,9 +274,18 @@ def run_simulation_tests(model_path: str, window_size: int = 8, threshold: float
     return True
 
 
-def start_live_inference(port: str, baudrate: int, model_path: str, window_size: int = 8, threshold: float = 0.70):
+def start_live_inference(
+    port: str,
+    baudrate: int,
+    model_path: str,
+    window_size: int = 8,
+    threshold: float = 0.70,
+    baseline: float = 9.50,
+    auto_drift: bool = False,
+):
     """
-    Connect to ESP32 serial port and run real-time inference loop with temporal debouncing.
+    Connect to ESP32 serial port and run real-time inference loop with temporal debouncing
+    and adaptive baseline drift compensation.
     """
     print(f"[*] Loading classifier pipeline from '{model_path}'...")
     try:
@@ -284,7 +306,7 @@ def start_live_inference(port: str, baudrate: int, model_path: str, window_size:
     try:
         ser = serial.Serial(port, baudrate, timeout=1)
         time.sleep(2)  # Stabilization delay
-        print("[+] Connected! Streaming live predictions with state debouncer...\n")
+        print(f"[+] Connected! Baseline Reference: {baseline:.2f}V (Auto-drift: {auto_drift})\n")
     except Exception as e:
         print(f"[!] Failed to open serial port {port}: {e}")
         print("[i] If testing without hardware, run: python live_inference.py --test")
@@ -294,12 +316,13 @@ def start_live_inference(port: str, baudrate: int, model_path: str, window_size:
         r"([0-9]+\.?[0-9]*)\s*,\s*([0-9]+\.?[0-9]*)\s*,\s*([0-9]+\.?[0-9]*)"
     )
     state_filter = NILMStateFilter(window_size=window_size, transition_threshold=threshold)
+    v_baseline = float(baseline)
 
-    print("=" * 95)
+    print("=" * 105)
     print(
-        f"{'TIMESTAMP':<10} | {'V1':<6} {'V2':<6} {'V3':<6} | {'RAW PREDICT':<12} {'CONF':<6} | {'CONFIRMED LOAD':<14} {'CONSENSUS':<9} | {'STATUS'}"
+        f"{'TIMESTAMP':<10} | {'V1 (RAW)':<8} {'V2':<6} {'V3':<6} | {'RAW PREDICT':<12} {'CONF':<6} | {'CONFIRMED LOAD':<14} {'CONSENSUS':<9} | {'STATUS & BASELINE'}"
     )
-    print("=" * 95)
+    print("=" * 105)
 
     try:
         while True:
@@ -309,25 +332,42 @@ def start_live_inference(port: str, baudrate: int, model_path: str, window_size:
 
             match = pattern.search(line)
             if match:
-                v1 = float(match.group(1))
+                v1_raw = float(match.group(1))
                 v2 = float(match.group(2))
                 v3 = float(match.group(3))
 
-                features = np.array([[v1, v2, v3]])
+                # User Rule: Strictly NO background calibrations when load is added or running.
+                # Baseline is strictly fixed to the user-specified baseline.
+                if auto_drift and state_filter.confirmed_state == "NO LOAD" and abs(v1_raw - v_baseline) <= 0.50:
+                    v_baseline = 0.995 * v_baseline + 0.005 * v1_raw
+
+                v_baseline = max(4.0, min(14.0, v_baseline))
+                baseline_offset = v_baseline - 9.50
+                v1_norm = max(0.1, v1_raw - baseline_offset)
+
+                if hasattr(model, "set_baseline"):
+                    model.set_baseline(v_baseline)
+                    model_v1 = v1_raw
+                    regime_tag = getattr(model, "active_regime_code", "MID")
+                else:
+                    model_v1 = v1_norm
+                    regime_tag = "LEGACY"
+
+                features = np.array([[model_v1, v2, v3]])
                 raw_prediction = model.predict(features)[0]
                 probabilities = model.predict_proba(features)[0]
                 confidence = max(probabilities) * 100
 
-                # Filter through state debouncer and hysteresis engine
+                # Filter through state debouncer and hysteresis engine using normalized V1
                 confirmed_state, consensus_ratio, dv1, dv1_dt, event = state_filter.process(
-                    v1, v2, v3, raw_prediction, confidence
+                    v1_norm, v2, v3, raw_prediction, confidence
                 )
 
                 timestamp = time.strftime("%H:%M:%S")
 
                 print(
-                    f"{timestamp:<10} | {v1:<6.2f} {v2:<6.2f} {v3:<6.2f} | {raw_prediction:<12} {confidence:>5.1f}% | "
-                    f"{confirmed_state:<14} {consensus_ratio*100:>7.0f}% | {event}"
+                    f"{timestamp:<10} | {v1_raw:<8.2f} {v2:<6.2f} {v3:<6.2f} | {raw_prediction:<12} {confidence:>5.1f}% | "
+                    f"{confirmed_state:<14} {consensus_ratio*100:>7.0f}% | [{regime_tag}] {event} (Base={v_baseline:.1f}V)"
                 )
 
                 # Send debounced, rock-solid state back to ESP32 for LCD display
@@ -375,6 +415,18 @@ if __name__ == "__main__":
         help="Majority vote consensus threshold for state transition (default: 0.70)",
     )
     parser.add_argument(
+        "--baseline",
+        type=float,
+        default=9.50,
+        help="NO LOAD baseline reference voltage (e.g. 5.0V or 11.0V, default: 9.5V)",
+    )
+    parser.add_argument(
+        "--auto-drift",
+        action="store_true",
+        default=False,
+        help="Enable automatic continuous zero-drift micro-compensation (default: False, strictly manual)",
+    )
+    parser.add_argument(
         "--test",
         "--simulate",
         action="store_true",
@@ -396,4 +448,6 @@ if __name__ == "__main__":
             model_path=args.model,
             window_size=args.window_size,
             threshold=args.threshold,
+            baseline=args.baseline,
+            auto_drift=args.auto_drift,
         )

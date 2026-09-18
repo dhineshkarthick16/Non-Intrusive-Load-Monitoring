@@ -1,0 +1,157 @@
+EdgeWatt: A Low-Cost ESP32-Based Non-Intrusive Load Monitoring System Using Engineered Steady-State Features and Ensemble Classification
+
+Dhinesh Karthick, Manickavel C
+
+Department of Electronics and Communication Engineering, Chennai Institute of Technology, Tamil Nadu, India
+
+Abstract
+
+Non-Intrusive Load Monitoring (NILM) systems typically depend on cloud-based inference or high-resolution phase and harmonic analysis, limiting their suitability for low-cost, low-power edge deployment. This work presents EdgeWatt, an ESP32-based NILM system that performs on-device appliance classification using a low-cost SCT-013-100A/1V current transformer (CT) sampled on a 12-bit ADC channel, without reliance on zero-crossing or phase reference data. Raw tri-axial telemetry — RMS magnitude (V1), peak magnitude (V2), and crest factor (V3) — is captured per 200 ms window and expanded into a 10-dimensional engineered feature space (inverse crest ratios, peak-to-RMS ratios, power approximations, and log-scaled transforms). Classification is performed on-host by a weighted soft-voting ensemble of gradient-boosted and extra-trees classifiers, trained on a fused corpus of 10,209 samples combining an offline dataset with 4,199 samples collected during an automated 40-minute, 8-cycle live hardware validation suite. An 8-sample debouncing filter with a 70% consensus threshold, a rate-of-change disconnect detector, and a post-load cooldown window suppress transient misclassification and capacitive-discharge artifacts. The fused ensemble reaches 85.26% overall accuracy (up from 80.87% on the offline-only corpus), with bulb precision improving from 71.97% to 85.67% and false bulb triggers falling from 1.60% to 0.10%. During development, an incorrect dual-conductor CT clamping configuration was identified and corrected, enabling reliable classification of charger/SMPS loads in addition to resistive bulbs. EdgeWatt demonstrates that a fully on-device, phase-free sensing pipeline paired with ensemble classification and lightweight temporal filtering can achieve practically usable appliance discrimination on commodity microcontroller hardware.
+
+Index Terms—Non-Intrusive Load Monitoring, Edge Computing, ESP32, Current Transformer, Ensemble Learning, Feature Engineering, Energy Disaggregation.
+
+I. INTRODUCTION
+
+Appliance-level energy visibility helps consumers identify wasteful loads and helps utilities plan demand response, but per-appliance smart plugs are costly and intrusive to install at scale. Non-Intrusive Load Monitoring (NILM) addresses this by inferring individual appliance behaviour from a single point of measurement at the mains or a single outlet, using the aggregate current or power signature to identify which appliance is active [1].
+
+Most NILM literature either assumes access to high-frequency, phase-resolved current and voltage waveforms, or offloads inference to a cloud service or a single-board computer such as a Raspberry Pi. Both approaches are difficult to justify for a single-appliance, battery- or wall-powered edge sensor. Even NILM work explicitly targeting microcontrollers such as the ESP32 has generally trained its models offline on public datasets such as REDD, rather than on a self-characterized, low-cost analog front end [2], [3].
+
+EdgeWatt is an ESP32-based NILM system built around a single low-cost CT sensor and no phase reference. The system evolved from an initial z-score nearest-neighbor classifier on raw RMS and crest-factor features into a full engineered-feature, ensemble-classification pipeline described in this paper. The contributions of this work are: (1) a characterized, calibrated low-cost analog front end and 10-dimensional engineered feature space built from three raw telemetry channels; (2) a fused training corpus combining offline data with live hardware validation samples; (3) a weighted soft-voting ensemble classifier reaching 85.26% overall accuracy with near-zero false bulb triggers; (4) a temporal debouncing and hysteresis layer that suppresses transient and capacitive-discharge misclassification; and (5) a documented and corrected CT-clamping pitfall that had silently invalidated early appliance tests.
+
+II. RELATED WORK
+
+Hart's foundational work formalized NILM as a finite-state appliance identification problem using aggregate current and voltage measurements [1]. Zeifman and Roth later reviewed the resulting body of steady-state and transient feature-extraction techniques, noting that steady-state features such as RMS current and power remain attractive for low-sampling-rate, resource-constrained deployments [2].
+
+Recent work has targeted commodity microcontrollers directly: Aghera et al. proposed a 1D-CNN/LSTM disaggregation model explicitly sized for deployment on an ESP32, but trained and validated on the low-frequency REDD dataset rather than a self-built sensing front end [3]. Makonin et al. demonstrated real-time NILM using sparse Hidden Markov Models suited to streaming, low-latency inference, though targeting smart-meter-grade hardware [4]. Liu et al. proposed unsupervised, low-complexity appliance modelling intended to reduce training overhead [5], and Nalmpantis and Vrakas surveyed the qualitative and quantitative trade-offs across machine-learning NILM approaches, including ensemble and tree-based methods [6]. Murray et al. separately showed that neural NILM models trained on one household often transfer poorly to another, underscoring the value of on-site calibration and hardware-in-the-loop data collection over pretrained, dataset-derived models [7].
+
+A separate, largely informal body of practitioner work documents CT-based single-point energy monitoring on ESP32 hardware using sensors such as the SCT-013 [8]. This work is useful for hardware reference but rarely documents appliance-level classification, ensemble modelling, or common wiring failure modes. EdgeWatt is positioned at the intersection of these two bodies of work: it uses the low-cost, single-CT hardware common in practitioner projects, but applies it to on-device-sensed, host-classified appliance discrimination using an engineered feature space and an ensemble classifier calibrated on real, hardware-collected data rather than public datasets alone.
+
+III. HARDWARE AND SENSING PIPELINE
+
+The ESP32 measures line current through an SCT-013-100A/1V split-core CT sensor connected to an ADC-capable GPIO (GPIO 34), sampled at 12-bit resolution with 11 dB attenuation. Each 200 ms window is reduced on-device to three raw telemetry values — RMS magnitude (V1), peak magnitude (V2), and crest factor (V3) — and streamed to a host over a serial link at 115200 baud. A 16x2 I2C LCD provides local feedback, displaying the raw R/P metrics on the first row and the live predicted load state (NO LOAD / Charger / Bulb), received back from the host classifier, on the second row.
+
+Reducing the sensing path to three scalar features per window keeps the ESP32 firmware simple and deterministic, while pushing feature engineering and classification — both of which benefit from iteration — onto the host side, where the model can be retrained without reflashing the device.
+
+IV. FEATURE ENGINEERING
+
+The raw (V1, V2, V3) telemetry is expanded host-side into a 10-dimensional feature vector by feature_extractor.py. Engineered features include inverse crest ratios of the form V1/(V2+ε), peak-to-RMS ratios, power approximations V1×V2 and V1×V3, and log-scaled transforms such as ln(1+V1). Figure 1 (Panel 2) shows the resulting separation in a two-dimensional projection of V1 against the V1×V2 power proxy: Bulb samples occupy a higher-magnitude band, Charger and NO LOAD overlap more heavily at lower magnitudes, motivating the higher-dimensional feature space and ensemble classifier used rather than a simple threshold or nearest-neighbor rule.
+
+Feature importance from the trained ensemble (Figure 1, Panel 4) confirms that the raw RMS channel V1 and its log transform dominate (38.2% and 32.2% of relative importance respectively), with the remaining engineered ratio and power-proxy features contributing smaller, complementary signal.
+
+Fig. 1. Fused-dataset overview: train/test split per class (Panel 1), engineered power-space distribution (Panel 2), normalized confusion matrix on the held-out test set (Panel 3), and ensemble feature importance ranking (Panel 4).
+
+V. DATASET AND CLASSIFICATION MODEL
+
+Training data was fused from two sources: 6,010 samples from an offline dataset, and 4,199 samples collected live from hardware during an automated 40-minute, 8-cycle validation suite (validation_report_40min.json). The fused corpus totals 10,209 samples across three classes — Bulb, Charger, and NO LOAD — split 80%/20% into training and test sets (Figure 1, Panel 1).
+
+The champion model (load_classifier.pkl) is a weighted soft-voting ensemble combining two Gradient Boosting classifiers, one HistGradientBoosting classifier, and one Extra Trees classifier inside a single scikit-learn pipeline. Table I summarizes the effect of fusing live hardware data into the offline-only corpus.
+
+TABLE I
+
+Effect of Corpus Fusion on Ensemble Performance
+
+Metric
+
+Initial Model
+
+Fused Champion Ensemble
+
+Net Change
+
+Corpus Size
+
+6,010 samples
+
+10,209 samples
+
++4,199 samples
+
+Overall Accuracy
+
+80.87%
+
+85.26%
+
++4.39%
+
+Bulb Precision
+
+71.97%
+
+85.67%
+
++13.70%
+
+Bulb F1-Score
+
+0.7350
+
+0.8006
+
++0.0656
+
+NO LOAD Recall
+
+87.99%
+
+92.94%
+
++4.95%
+
+False Bulb Triggers
+
+1.60%
+
+0.10%
+
+−0.10% abs.
+
+ 
+
+The held-out confusion matrix (Figure 1, Panel 3) shows NO LOAD is recognized most reliably (92.9% correctly classified), Charger next (77.2%), and Bulb least reliably (75.1%), with most Bulb errors misclassified as Charger (23.2%) rather than NO LOAD (1.7%) — consistent with the two classes' partial overlap in the engineered power space seen in Figure 1, Panel 2.
+
+VI. STATE FILTERING AND HYSTERESIS LOGIC
+
+Raw per-window ensemble predictions are noisy enough, particularly near class boundaries, that they are not used directly as the displayed or logged state. live_inference.py wraps the classifier in an NILMStateFilter that maintains an 8-sample sliding FIFO buffer (approximately 2 seconds of telemetry) and requires 70% consensus within that buffer before a state transition is confirmed, eliminating single-sample noise spikes.
+
+Two additional rules handle known transient artifacts. A dV1/dt drop tracker flags any window where V1 falls by more than 1.5 V from the previous window and immediately overrides the state to NO LOAD (DISCONNECT_DROP), since a genuine load removal should be detected faster than the 8-sample consensus window would otherwise allow. Conversely, a 12-sample post-load cooldown/hysteresis window is applied after a Bulb state ends, absorbing the capacitive discharge decay of the analog front end (V1 settling through roughly 9.8–10.5 V) that would otherwise be misread as a Charger load switching on.
+
+Figure 2 (Panel 3) shows the debounced state trace against the expected protocol schedule across the 8-cycle validation run, and Panel 4 reports per-cycle classification accuracy, ranging from 78.6% to 100% across cycles, with the lowest-accuracy cycles corresponding to Charger-to-NO-LOAD and NO-LOAD-to-Bulb transition segments where debouncing has the least settling time.
+
+Fig. 2. 40-minute automated hardware validation run: V1 dynamic response and hysteresis discharge (Panel 1), V2/V3 trajectories (Panel 2), debounced classification vs. protocol schedule (Panel 3), and cycle-by-cycle classification accuracy (Panel 4).
+
+VII. CT CLAMPING: A RESOLVED DEPLOYMENT PITFALL
+
+Early tests with real appliances beyond the calibration bulbs — notably a clothes iron and chargers — showed near-zero signal regardless of actual load. The cause was traced to CT clamping methodology: both the live and neutral conductors of the appliance cord had been clamped together inside the CT's split core, and because live and neutral carry equal and opposite current in a single-phase circuit, this caused near-total field cancellation independent of load.
+
+The fix was a dedicated CT test jig: a single-socket extension cord with a short insulated loop spliced into the live conductor only, checked by college staff before first live power-on, so any appliance plugged into the jig is correctly sensed on a single conductor. This correction is what made charger/SMPS loads testable at all, and is offered as a practical caution for other low-cost, single-CT NILM builds, which is not prominently documented in the reviewed literature [8].
+
+VIII. DISCUSSION AND LIMITATIONS
+
+At 85.26% overall accuracy, EdgeWatt's fused ensemble is well above chance across three classes but still misclassifies roughly one Bulb sample in four, predominantly as Charger. This is consistent with the two classes sharing a lower-magnitude power-space region (Figure 1, Panel 2) and suggests that further gains are more likely to come from additional discriminative features (e.g., higher-order waveform-shape statistics) than from further corpus growth alone. The debouncing and hysteresis layer measurably improves usability — false Bulb triggers fell to 0.10% — but per-cycle accuracy in Figure 2 (Panel 4) shows state-transition segments remain the weakest point, an inherent trade-off of any fixed-window consensus filter against response latency.
+
+The reported accuracy figures reflect the fused offline-plus-hardware corpus and an 80/20 train/test split; they have not yet been validated against appliances entirely absent from training (true out-of-distribution generalization), which remains future work.
+
+IX. CONCLUSION AND FUTURE WORK
+
+EdgeWatt demonstrates that a phase-free, engineered-feature, ensemble-classified NILM pipeline is achievable on commodity ESP32 hardware with a single low-cost CT sensor, reaching 85.26% overall classification accuracy across Bulb, Charger, and NO LOAD states with near-zero false Bulb triggers after temporal debouncing. The project also surfaces a practical hardware lesson, CT dual-conductor cancellation, that is likely to affect other low-cost single-CT NILM builds but is under-documented in the literature.
+
+Future work includes validating generalization to appliances outside the training corpus, quantifying the added value of individual engineered features via ablation, tightening the Bulb/Charger boundary in the power-space projection, and evaluating whether reintroducing zero-crossing/phase information would meaningfully improve separation given the ensemble's current reliance on V1 and its log transform.
+
+REFERENCES
+
+[1] G. W. Hart, "Nonintrusive appliance load monitoring," Proc. IEEE, vol. 80, no. 12, pp. 1870–1891, Dec. 1992.
+
+[2] M. Zeifman and K. Roth, "Nonintrusive appliance load monitoring: Review and outlook," IEEE Trans. Consum. Electron., vol. 57, no. 1, pp. 76–84, 2011.
+
+[3] R. Aghera, S. Chilana, V. Garg, and R. Reddy, "A deep learning technique using low sampling rate for residential non-intrusive load monitoring," arXiv:2111.05120, 2021.
+
+[4] S. Makonin, F. Popowich, I. V. Bajić, B. Gill, and L. Bartram, "Exploiting HMM sparsity to perform online real-time nonintrusive load monitoring," IEEE Trans. Smart Grid, vol. 7, no. 6, pp. 2575–2585, 2016.
+
+[5] Q. Liu, K. M. Kamoto, X. Liu, M. Sun, and N. Linge, "Low-complexity non-intrusive load monitoring using unsupervised learning and generalized appliance models," IEEE Trans. Consum. Electron., vol. 65, no. 1, pp. 28–37, 2019.
+
+[6] C. Nalmpantis and D. Vrakas, "Machine learning approaches for non-intrusive load monitoring: from qualitative to quantitative comparation," Artif. Intell. Rev., Jan. 2018.
+
+[7] D. Murray, L. Stankovic, V. Stankovic, S. Lulic, and S. Sladojevic, "Transferability of neural network approaches for low-rate energy disaggregation," in Proc. IEEE ICASSP, 2019, pp. 8330–8334.
+
+[8] jamcre, "esp32-energy-monitor: Multiple phase DIY energy consumption monitor using ESP32 and ESPHome," GitHub repository, 2023. [Online]. Available: https://github.com/Jamcre/esp32-energy-monitor

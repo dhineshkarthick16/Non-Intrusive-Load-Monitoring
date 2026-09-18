@@ -21,12 +21,15 @@ FEATURE_NAMES = [
     "log_V1",
     "log_V2",
     "V2_div_V1",
+    "V1_sub_baseline",
+    "power_above_baseline",
+    "log_power_above_baseline",
 ]
 
 
 class NILMFeatureExtractor(BaseEstimator, TransformerMixin):
     """
-    Transforms raw 3-dimensional load vectors (V1, V2, V3) into 10 engineered features:
+    Transforms raw 3-dimensional load vectors (V1, V2, V3) into 13 engineered features:
       1. V1: RMS voltage/current proxy
       2. V2: Peak amplitude
       3. V3: Crest factor (Peak / RMS)
@@ -37,10 +40,13 @@ class NILMFeatureExtractor(BaseEstimator, TransformerMixin):
       8. log_V1: Logarithmic RMS transformation log1p(V1)
       9. log_V2: Logarithmic Peak transformation log1p(V2)
       10. V2_div_V1: Direct Peak to RMS ratio
+      11. V1_sub_baseline: V1 - V_baseline (Dynamic zero-drift mitigation)
+      12. power_above_baseline: max(0, V1 - V_baseline) * V2
+      13. log_power_above_baseline: log1p(max(0, V1 - V_baseline) * V2)
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, v_baseline=9.50):
+        self.v_baseline = float(v_baseline)
 
     def fit(self, X, y=None):
         return self
@@ -81,6 +87,13 @@ class NILMFeatureExtractor(BaseEstimator, TransformerMixin):
         log_v1 = np.log1p(np.maximum(0.0, v1))
         log_v2 = np.log1p(np.maximum(0.0, v2))
 
+        # 4. Baseline drift mitigation features
+        v_base = getattr(self, "v_baseline", 9.2)
+        v1_sub_baseline = v1 - v_base
+        v1_excess = np.maximum(0.0, v1_sub_baseline)
+        power_above_baseline = v1_excess * v2
+        log_power_above_baseline = np.log1p(power_above_baseline)
+
         engineered = np.column_stack([
             v1,
             v2,
@@ -92,6 +105,9 @@ class NILMFeatureExtractor(BaseEstimator, TransformerMixin):
             log_v1,
             log_v2,
             v2_div_v1,
+            v1_sub_baseline,
+            power_above_baseline,
+            log_power_above_baseline,
         ])
 
         return engineered
